@@ -11,6 +11,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import requests
+import uuid
 
 # ===== CONFIGURAZIONE =====
 NEXTCLOUD_URL = "https://your-server.com/nextcloud"
@@ -360,8 +361,11 @@ def upload_to_qdrant(embeddings):
     # Upload points
     points = []
     for i, emb in enumerate(embeddings):
+        # Genera UUID univoco per ogni chunk (evita sovrascritture tra run!)
+        point_id = str(uuid.uuid4())
+
         points.append(PointStruct(
-            id=i,
+            id=point_id,
             vector=emb['embedding'],
             payload={
                 'text': emb['text'],
