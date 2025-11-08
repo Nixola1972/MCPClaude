@@ -1,0 +1,188 @@
+version: '3.8'
+
+###############################################################################
+# UNIFIED MEMORY STACK - Web Server
+# PostgreSQL + Qdrant + Nextcloud + Memory MCP API
+#
+# Deploy su server web con:
+# docker-compose -f docker-compose-memory-stack.yml up -d
+###############################################################################
+
+networks:
+  memory-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  qdrant_storage:
+  nextcloud_data:
+  nextcloud_db:
+
+services:
+
+  # ===== PostgreSQL - Structured Data =====
+  postgres:
+    image: postgres:16-alpine
+    container_name: memory_postgres
+    restart: unless-stopped
+    networks:
+      - memory-net
+    ports:
+      - "5432:5432"  # Esponi se vuoi accesso esterno (usa firewall!)
+    environment:
+      POSTGRES_DB: unified_memory
+      POSTGRES_USER: memory_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}  # CAMBIA!
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=it_IT.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memory_user -d unified_memory"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===== Qdrant - Vector Database =====
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: memory_qdrant
+    restart: unless-stopped
+    networks:
+      - memory-net
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC (opzionale)
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:6333/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===== Nextcloud - File Sync & Storage =====
+  nextcloud_db:
+    image: mariadb:11
+    container_name: nextcloud_mariadb
+    restart: unless-stopped
+    networks:
+      - memory-net
+    environment:
+      MYSQL_ROOT_PASSWORD: ${NEXTCLOUD_DB_ROOT_PASSWORD:-rootpass123}
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-nextcloudpass123}
+    volumes:
+      - nextcloud_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nextcloud:
+    image: nextcloud:latest
+    container_name: nextcloud
+    restart: unless-stopped
+    networks:
+      - memory-net
+    ports:
+      - "8080:80"  # Nextcloud web interface
+    environment:
+      MYSQL_HOST: nextcloud_db
+      MYSQL_DATABASE: nextcloud
+      MYSQL_USER: nextcloud
+      MYSQL_PASSWORD: ${NEXTCLOUD_DB_PASSWORD:-nextcloudpass123}
+      NEXTCLOUD_ADMIN_USER: admin
+      NEXTCLOUD_ADMIN_PASSWORD: ${NEXTCLOUD_ADMIN_PASSWORD:-admin123}  # CAMBIA!
+      NEXTCLOUD_TRUSTED_DOMAINS: ${NEXTCLOUD_DOMAIN:-localhost}
+    volumes:
+      - nextcloud_data:/var/www/html
+    depends_on:
+      nextcloud_db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/status.php"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===== Memory MCP API Server (Python FastAPI) =====
+  memory_mcp_api:
+    image: python:3.11-slim
+    container_name: memory_mcp_api
+    restart: unless-stopped
+    networks:
+      - memory-net
+    ports:
+      - "8000:8000"  # FastAPI endpoint
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: unified_memory
+      POSTGRES_USER: memory_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+    volumes:
+      - ./memory_mcp_server:/app
+    working_dir: /app
+    command: >
+      sh -c "pip install fastapi uvicorn psycopg2-binary qdrant-client pydantic &&
+             uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+
+  # ===== pgAdmin - PostgreSQL Management (opzionale) =====
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: memory_pgadmin
+    restart: unless-stopped
+    networks:
+      - memory-net
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin123}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - ./pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+
+###############################################################################
+# ISTRUZIONI:
+#
+# 1. Crea file .env nella stessa directory:
+#    POSTGRES_PASSWORD=your_strong_password
+#    NEXTCLOUD_DB_PASSWORD=another_strong_password
+#    NEXTCLOUD_DB_ROOT_PASSWORD=root_strong_password
+#    NEXTCLOUD_ADMIN_PASSWORD=admin_strong_password
+#    NEXTCLOUD_DOMAIN=your-domain.com
+#    PGADMIN_PASSWORD=pgadmin_password
+#
+# 2. Crea init-db.sql (schema database)
+#
+# 3. Avvia stack:
+#    docker-compose -f docker-compose-memory-stack.yml up -d
+#
+# 4. Accesso servizi:
+#    - PostgreSQL: localhost:5432
+#    - Qdrant: http://localhost:6333
+#    - Nextcloud: http://localhost:8080
+#    - Memory API: http://localhost:8000
+#    - pgAdmin: http://localhost:5050
+#
+# 5. Nextcloud setup mobile:
+#    - Installa app Nextcloud (Android/iOS)
+#    - Configura auto-upload da cartella "Audio_Riunioni"
+#
+###############################################################################
