@@ -18,6 +18,7 @@ NEXTCLOUD_URL = "https://your-server.com/nextcloud"
 NEXTCLOUD_USER = "your-user"
 NEXTCLOUD_PASS = "your-pass"
 AUDIO_FOLDER = "/remote.php/dav/files/{user}/Audio_Riunioni/"
+PROCESSED_FOLDER = "/remote.php/dav/files/{user}/Audio_Processati/"
 
 LOCAL_AUDIO_DIR = Path("/home/sai/audio_queue")
 PROCESSED_DIR = Path("/home/sai/audio_processed")
@@ -34,7 +35,7 @@ QDRANT_PORT = 6333
 
 # ===== STEP 1: DOWNLOAD NUOVI AUDIO DA NEXTCLOUD =====
 def download_new_audio():
-    """Scarica nuovi file audio da Nextcloud."""
+    """Scarica nuovi file audio da Nextcloud (solo file non ancora processati)."""
     print("📥 Step 1: Download audio da Nextcloud...")
 
     LOCAL_AUDIO_DIR.mkdir(exist_ok=True)
@@ -49,22 +50,42 @@ def download_new_audio():
     }
 
     client = wc.Client(options)
-    remote_files = client.list(AUDIO_FOLDER.format(user=NEXTCLOUD_USER))
+
+    # Ottieni lista file già processati
+    processed_files = set()
+    try:
+        processed_folder = PROCESSED_FOLDER.format(user=NEXTCLOUD_USER)
+        processed_files = set(client.list(processed_folder))
+        print(f"  ℹ️  Trovati {len(processed_files)} file già processati (verranno saltati)")
+    except Exception:
+        # Cartella Processati non esiste ancora
+        print(f"  ℹ️  Cartella Processati non ancora creata (primo run)")
+
+    # Scarica solo file nuovi (non ancora processati)
+    audio_folder = AUDIO_FOLDER.format(user=NEXTCLOUD_USER)
+    remote_files = client.list(audio_folder)
 
     downloaded = 0
+    skipped = 0
     for remote_file in remote_files:
         if remote_file.endswith(('.wav', '.m4a', '.mp3', '.flac')):
+            # Salta se già processato
+            if remote_file in processed_files:
+                print(f"  ⏭️  Saltato (già processato): {remote_file}")
+                skipped += 1
+                continue
+
             local_path = LOCAL_AUDIO_DIR / Path(remote_file).name
 
             if not local_path.exists():
-                print(f"  Downloading: {remote_file}")
+                print(f"  ⬇️  Downloading: {remote_file}")
                 client.download_sync(
-                    remote_path=f"{AUDIO_FOLDER}/{remote_file}",
+                    remote_path=f"{audio_folder}{remote_file}",
                     local_path=str(local_path)
                 )
                 downloaded += 1
 
-    print(f"✅ Downloaded {downloaded} new files")
+    print(f"✅ Downloaded {downloaded} new files (saltati {skipped} già processati)")
     return list(LOCAL_AUDIO_DIR.glob("*.wav")) + list(LOCAL_AUDIO_DIR.glob("*.m4a"))
 
 
@@ -380,6 +401,49 @@ def upload_to_qdrant(embeddings):
     print(f"✅ Uploaded {len(points)} vectors to Qdrant")
 
 
+# ===== STEP 7: SPOSTA FILE PROCESSATI =====
+def move_processed_files(transcriptions):
+    """Sposta i file processati in cartella Processati su Nextcloud."""
+    print(f"\n📦 Step 7: Sposta {len(transcriptions)} file processati su Nextcloud...")
+
+    import webdav3.client as wc
+
+    options = {
+        'webdav_hostname': NEXTCLOUD_URL,
+        'webdav_login': NEXTCLOUD_USER,
+        'webdav_password': NEXTCLOUD_PASS
+    }
+
+    client = wc.Client(options)
+
+    # Crea cartella Processati se non esiste
+    processed_folder = PROCESSED_FOLDER.format(user=NEXTCLOUD_USER)
+    try:
+        client.mkdir(processed_folder)
+        print(f"  ✅ Creata cartella: {processed_folder}")
+    except Exception:
+        # Cartella già esistente
+        pass
+
+    moved = 0
+    for trans in transcriptions:
+        filename = trans['filename']
+        audio_folder = AUDIO_FOLDER.format(user=NEXTCLOUD_USER)
+
+        remote_source = f"{audio_folder}{filename}"
+        remote_dest = f"{processed_folder}{filename}"
+
+        try:
+            # Sposta file (move = copy + delete)
+            client.move(remote_path=remote_source, remote_path2=remote_dest)
+            print(f"  ✅ Spostato: {filename}")
+            moved += 1
+        except Exception as e:
+            print(f"  ⚠️  Errore spostando {filename}: {e}")
+
+    print(f"✅ Spostati {moved}/{len(transcriptions)} file in Audio_Processati")
+
+
 # ===== MAIN WORKFLOW =====
 def main():
     print("=" * 60)
@@ -413,6 +477,9 @@ def main():
 
         # Step 6: Upload Qdrant
         upload_to_qdrant(embeddings)
+
+        # Step 7: Sposta file processati su Nextcloud
+        move_processed_files(transcriptions)
 
         print("\n" + "=" * 60)
         print(f"✅ WORKFLOW COMPLETATO - {datetime.now()}")
