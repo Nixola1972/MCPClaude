@@ -42,7 +42,7 @@ OLLAMA_API = "http://localhost:11434/api/generate"
 OLLAMA_EMBED_API = "http://localhost:11434/api/embeddings"
 
 # Thresholds
-SUMMARY_MIN_DURATION = 300  # 5 minutes in seconds
+SUMMARY_MIN_DURATION = 180  # 3 minutes in seconds
 
 # ===== UTILITY: FILE HASH =====
 def get_file_hash(file_path):

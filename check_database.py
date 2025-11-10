@@ -47,12 +47,12 @@ try:
         print(f"   ⏱️  Durata: {row['duration_seconds']}s ({duration_min}m {duration_sec}s)")
         print(f"   📝 Parole: {row['word_count']}")
 
-        # Check if < 5 minutes
-        if row['duration_seconds'] < 300:
-            print(f"   ⚠️  PROBLEMA: File troppo corto (< 5 minuti)!")
-            print(f"      Il workflow v2.1 NON crea summaries per file < 5 minuti")
+        # Check if < 3 minutes
+        if row['duration_seconds'] < 180:
+            print(f"   ⚠️  PROBLEMA: File troppo corto (< 3 minuti)!")
+            print(f"      Il workflow v2.1 NON crea summaries per file < 3 minuti")
         else:
-            print(f"   ✅ Durata OK per creare summaries (> 5 minuti)")
+            print(f"   ✅ Durata OK per creare summaries (> 3 minuti)")
 
         print()
 
@@ -65,16 +65,16 @@ try:
     if len(rows) == 0:
         print("❌ Nessun file processato nel database")
     else:
-        all_short = all(r['duration_seconds'] < 300 for r in rows)
+        all_short = all(r['duration_seconds'] < 180 for r in rows)
         if all_short:
-            print("⚠️  Tutti i file sono < 5 minuti")
-            print("   SOLUZIONE: Processa un file audio > 5 minuti!")
+            print("⚠️  Tutti i file sono < 3 minuti")
+            print("   SOLUZIONE: Processa un file audio > 3 minuti!")
             print()
             print("   Opzioni:")
-            print("   1. Carica file lungo (> 5 min) in Nextcloud/Audio_Riunioni/")
+            print("   1. Carica file lungo (> 3 min) in Nextcloud/Audio_Riunioni/")
             print("   2. Esegui: python3 audio_processing_workflow_v2.py")
         else:
-            print("❓ Almeno un file è > 5 minuti MA summaries = 0")
+            print("❓ Almeno un file è > 3 minuti MA summaries = 0")
             print("   Possibili cause:")
             print("   - Ollama non era attivo durante processing")
             print("   - Errore durante creazione summary")
