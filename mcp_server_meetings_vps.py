@@ -361,7 +361,19 @@ def handle_mcp_request(request: dict) -> dict:
 
         logger.info(f"MCP request: {method}")
 
-        if method == 'tools/list':
+        if method == 'initialize':
+            return {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {
+                    "tools": {}
+                },
+                "serverInfo": {
+                    "name": "meetings-mcp-server",
+                    "version": "1.0.0"
+                }
+            }
+
+        elif method == 'tools/list':
             return {
                 "tools": [
                     {
@@ -486,14 +498,33 @@ def main():
     for line in sys.stdin:
         try:
             request = json.loads(line)
-            response = handle_mcp_request(request)
+            request_id = request.get('id')
+            result = handle_mcp_request(request)
+
+            # Build JSON-RPC response
+            response = {
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": result
+            }
+
             print(json.dumps(response), flush=True)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON: {e}")
-            print(json.dumps({"error": "Invalid JSON"}), flush=True)
+            error_response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "Parse error"}
+            }
+            print(json.dumps(error_response), flush=True)
         except Exception as e:
             logger.error(f"Request handling error: {e}")
-            print(json.dumps({"error": str(e)}), flush=True)
+            error_response = {
+                "jsonrpc": "2.0",
+                "id": request.get('id') if 'request' in locals() else None,
+                "error": {"code": -32603, "message": str(e)}
+            }
+            print(json.dumps(error_response), flush=True)
 
 
 if __name__ == "__main__":
