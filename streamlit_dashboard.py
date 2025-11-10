@@ -287,13 +287,13 @@ def page_meetings():
 
 
 def page_meeting_detail(filename):
-    """Detail page for a specific meeting."""
+    """Detail page for a specific meeting with TABS layout."""
     st.title(f"🎙️ {filename}")
 
     conn = get_postgres_connection()
     cur = conn.cursor()
 
-    # Get full data
+    # Get full data (including mentioned_people if exists)
     cur.execute("""
         SELECT
             s.source_id,
@@ -333,90 +333,255 @@ def page_meeting_detail(filename):
 
     st.markdown("---")
 
-    # Metadata
-    col1, col2, col3, col4 = st.columns(4)
+    # Top Metadata (always visible)
+    col1, col2, col3, col4, col5 = st.columns(5)
     col1.metric("📅 Data", meeting['source_date'].strftime('%d/%m/%Y'))
     col2.metric("⏱️ Durata", f"{meeting['duration_seconds']//60} min")
-    col3.metric("📝 Parole", meeting['word_count'])
+    col3.metric("📝 Parole", f"{meeting['word_count']:,}")
 
     quality = meeting.get('metadata', {}).get('quality_metrics', {})
     if quality:
-        col4.metric("🎯 Qualità", f"{quality.get('words_per_minute', 0):.1f} w/m")
+        wpm = quality.get('words_per_minute', 0)
+        conf = quality.get('avg_confidence', 0)
+        col4.metric("🎯 Velocità", f"{wpm:.1f} w/m")
+        if conf > 0:
+            col5.metric("✅ Confidenza", f"{conf:.0%}")
 
     st.markdown("---")
 
-    # TL;DR
-    if meeting.get('tldr'):
-        st.subheader("📊 TL;DR")
-        st.info(meeting['tldr'])
+    # TABS NAVIGATION
+    tab1, tab2, tab3 = st.tabs(["📊 Panoramica", "📄 Trascrizione Completa", "🔍 Analisi Dettagliata"])
 
-    # Detailed Summary
-    if meeting.get('detailed_summary'):
-        st.subheader("📋 Riassunto Dettagliato")
-        st.write(meeting['detailed_summary'])
+    # ========== TAB 1: PANORAMICA ==========
+    with tab1:
+        # TL;DR prominente
+        if meeting.get('tldr'):
+            st.markdown("### 📊 Riepilogo Veloce (TL;DR)")
+            st.info(meeting['tldr'])
+            st.markdown("---")
 
-    st.markdown("---")
+        # PUNTI CHIAVE (highlights)
+        st.markdown("### 📌 Punti Chiave")
 
-    # Structured data
-    col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
 
-    with col1:
-        # Participants
-        participants = meeting.get('participants') or []
-        if participants:
-            st.subheader("👥 Partecipanti")
-            for p in participants:
-                st.write(f"• {p}")
+        with col1:
+            decisions = meeting.get('decisions') or []
+            if decisions:
+                st.markdown("**🎯 Decisioni Prese**")
+                st.metric("", f"{len(decisions)}")
+                for d in decisions[:3]:  # Show max 3
+                    if isinstance(d, dict):
+                        st.markdown(f"🔸 {d.get('decision', 'N/A')[:60]}...")
 
-        # Topics
-        topics = meeting.get('topics') or []
-        if topics:
-            st.subheader("🏷️ Argomenti")
-            for t in topics:
-                st.write(f"• {t}")
+        with col2:
+            action_items = meeting.get('action_items') or []
+            if action_items:
+                st.markdown("**✅ Azioni da Fare**")
+                st.metric("", f"{len(action_items)}")
+                for a in action_items[:3]:  # Show max 3
+                    if isinstance(a, dict):
+                        st.markdown(f"🔸 [{a.get('owner', '?')}] {a.get('task', 'N/A')[:50]}...")
 
-    with col2:
-        # Decisions
+        with col3:
+            numbers = meeting.get('key_numbers') or []
+            if numbers:
+                st.markdown("**💰 Numeri Importanti**")
+                st.metric("", f"{len(numbers)}")
+                for n in numbers[:3]:  # Show max 3
+                    if isinstance(n, dict):
+                        st.markdown(f"🔸 {n.get('amount', 'N/A')} ({n.get('type', 'N/A')})")
+
+        st.markdown("---")
+
+        # Participants and Topics
+        col1, col2 = st.columns(2)
+
+        with col1:
+            participants = meeting.get('participants') or []
+            if participants:
+                st.markdown("### 👥 Partecipanti alla Riunione")
+                # Display as badges
+                badges_html = " ".join([f'<span style="background-color:#1f77b4;color:white;padding:5px 10px;border-radius:15px;margin:2px;display:inline-block;">{p}</span>' for p in participants])
+                st.markdown(badges_html, unsafe_allow_html=True)
+            else:
+                st.info("👥 Nessun partecipante identificato")
+
+        with col2:
+            topics = meeting.get('topics') or []
+            if topics:
+                st.markdown("### 🏷️ Argomenti Discussi")
+                # Display as badges
+                badges_html = " ".join([f'<span style="background-color:#ff7f0e;color:white;padding:5px 10px;border-radius:15px;margin:2px;display:inline-block;">{t}</span>' for t in topics])
+                st.markdown(badges_html, unsafe_allow_html=True)
+            else:
+                st.info("🏷️ Nessun argomento identificato")
+
+        st.markdown("---")
+
+        # Detailed Summary
+        if meeting.get('detailed_summary'):
+            st.markdown("### 📋 Riassunto Dettagliato")
+            st.write(meeting['detailed_summary'])
+
+    # ========== TAB 2: TRASCRIZIONE COMPLETA ==========
+    with tab2:
+        st.markdown("### 📄 Trascrizione Integrale")
+
+        # Search in transcription
+        search_term = st.text_input("🔍 Cerca nella trascrizione", placeholder="es: fotovoltaico, budget, ecc.")
+
+        transcription = meeting.get('full_text', '')
+
+        if transcription:
+            # Stats
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Parole Totali", f"{meeting['word_count']:,}")
+            col2.metric("Caratteri", f"{len(transcription):,}")
+            col3.metric("Lingua", meeting.get('language', 'N/A').upper())
+
+            st.markdown("---")
+
+            # Display transcription with search highlight
+            if search_term:
+                # Highlight search term
+                highlighted = transcription.replace(
+                    search_term,
+                    f"**:red[{search_term}]**"
+                )
+                st.markdown(highlighted)
+
+                # Count occurrences
+                count = transcription.lower().count(search_term.lower())
+                if count > 0:
+                    st.success(f"✅ Trovate {count} occorrenze di '{search_term}'")
+                else:
+                    st.warning(f"⚠️ Nessuna occorrenza di '{search_term}'")
+            else:
+                # Display full text
+                st.text_area(
+                    "Testo Completo",
+                    transcription,
+                    height=600,
+                    disabled=True,
+                    label_visibility="collapsed"
+                )
+
+            # Download buttons
+            col1, col2 = st.columns(2)
+            with col1:
+                st.download_button(
+                    label="⬇️ Scarica TXT",
+                    data=transcription,
+                    file_name=f"{filename}_trascrizione.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+
+            with col2:
+                # Create a formatted version
+                formatted = f"""
+RIUNIONE: {filename}
+DATA: {meeting['source_date'].strftime('%d/%m/%Y %H:%M')}
+DURATA: {meeting['duration_seconds']//60} minuti
+PAROLE: {meeting['word_count']}
+
+TL;DR:
+{meeting.get('tldr', 'N/A')}
+
+TRASCRIZIONE COMPLETA:
+{transcription}
+"""
+                st.download_button(
+                    label="⬇️ Scarica Completo",
+                    data=formatted,
+                    file_name=f"{filename}_completo.txt",
+                    mime="text/plain",
+                    use_container_width=True
+                )
+        else:
+            st.warning("⚠️ Trascrizione non disponibile")
+
+    # ========== TAB 3: ANALISI DETTAGLIATA ==========
+    with tab3:
+        # Decisions detailed
         decisions = meeting.get('decisions') or []
         if decisions:
-            st.subheader("🎯 Decisioni")
-            for d in decisions:
+            st.markdown("### 🎯 Decisioni Prese")
+            for i, d in enumerate(decisions, 1):
                 if isinstance(d, dict):
-                    st.write(f"• {d.get('decision', 'N/A')}")
-                    st.caption(f"  Deciso da: {d.get('by', 'N/A')} | Quando: {d.get('date', 'N/A')}")
+                    with st.container():
+                        st.markdown(f"**{i}. {d.get('decision', 'N/A')}**")
+
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.caption(f"👤 Deciso da: **{d.get('by', 'N/A')}**")
+                        with col2:
+                            st.caption(f"📅 Quando: **{d.get('date', 'N/A')}**")
+
+                        st.markdown("---")
+        else:
+            st.info("🎯 Nessuna decisione registrata")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # Action Items with filtering
+        action_items = meeting.get('action_items') or []
+        if action_items:
+            st.markdown("### ✅ Action Items")
+
+            # Filter by owner
+            all_owners = list(set([a.get('owner', 'N/A') for a in action_items if isinstance(a, dict)]))
+            selected_owner = st.selectbox("Filtra per responsabile", ["Tutti"] + all_owners)
+
+            filtered_actions = action_items
+            if selected_owner != "Tutti":
+                filtered_actions = [a for a in action_items if isinstance(a, dict) and a.get('owner') == selected_owner]
+
+            for i, a in enumerate(filtered_actions, 1):
+                if isinstance(a, dict):
+                    with st.container():
+                        # Checkbox for completion (UI only, not saved)
+                        done = st.checkbox(
+                            f"**[{a.get('owner', 'N/A')}]** {a.get('task', 'N/A')}",
+                            key=f"action_{i}",
+                            value=False
+                        )
+
+                        deadline = a.get('deadline', 'Da definire')
+                        if done:
+                            st.success(f"✅ Completato! (Scadenza era: {deadline})")
+                        else:
+                            st.caption(f"⏰ Scadenza: **{deadline}**")
+
+                        st.markdown("---")
+        else:
+            st.info("✅ Nessuna azione da fare registrata")
+
+        st.markdown("<br>", unsafe_allow_html=True)
 
         # Key Numbers
         numbers = meeting.get('key_numbers') or []
         if numbers:
-            st.subheader("💰 Numeri Chiave")
+            st.markdown("### 💰 Numeri e Cifre Chiave")
+
+            # Display as table
+            import pandas as pd
+
+            numbers_data = []
             for n in numbers:
                 if isinstance(n, dict):
-                    st.write(f"• {n.get('amount', 'N/A')} ({n.get('type', 'N/A')})")
-                    if n.get('context'):
-                        st.caption(f"  {n['context']}")
+                    numbers_data.append({
+                        'Valore': n.get('amount', 'N/A'),
+                        'Tipo': n.get('type', 'N/A'),
+                        'Contesto': n.get('context', 'N/A')
+                    })
 
-    # Action Items
-    action_items = meeting.get('action_items') or []
-    if action_items:
-        st.subheader("✅ Action Items")
-        for a in action_items:
-            if isinstance(a, dict):
-                st.write(f"**[{a.get('owner', 'N/A')}]** {a.get('task', 'N/A')}")
-                st.caption(f"⏰ Scadenza: {a.get('deadline', 'N/A')}")
-
-    st.markdown("---")
-
-    # Full Transcription (collapsible)
-    with st.expander("📄 Trascrizione Completa"):
-        st.text_area("Trascrizione", meeting['full_text'], height=400, disabled=True)
-
-        # Download button
-        st.download_button(
-            label="⬇️ Scarica Trascrizione",
-            data=meeting['full_text'],
-            file_name=f"{filename}_trascrizione.txt",
-            mime="text/plain"
-        )
+            if numbers_data:
+                df = pd.DataFrame(numbers_data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("💰 Nessun numero chiave registrato")
 
     cur.close()
 
