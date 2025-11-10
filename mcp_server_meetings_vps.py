@@ -476,6 +476,13 @@ def handle_mcp_request(request: dict) -> dict:
 
 def main():
     """Main MCP server loop - reads from stdin, writes to stdout."""
+
+    # Redirect stderr to suppress library warnings that break MCP protocol
+    import os
+    stderr_fd = os.open('/var/log/mcp_server_meetings_stderr.log', os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(stderr_fd, 2)
+    os.close(stderr_fd)
+
     logger.info("MCP Server starting...")
     logger.info(f"PostgreSQL: {POSTGRES_HOST}:{POSTGRES_PORT}")
     logger.info(f"Qdrant: {QDRANT_HOST}:{QDRANT_PORT}")
