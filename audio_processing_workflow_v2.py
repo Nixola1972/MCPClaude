@@ -258,20 +258,22 @@ def create_single_summary(trans):
         }
 
     # Improved prompt with better instructions
-    prompt = f"""Analizza questa trascrizione di riunione e crea un riassunto strutturato.
+    prompt = f"""IMPORTANTE: Rispondi ESCLUSIVAMENTE in lingua ITALIANA. Tutti i testi devono essere in italiano.
+
+Analizza questa trascrizione di riunione italiana e crea un riassunto strutturato in ITALIANO.
 
 TRASCRIZIONE ({trans['word_count']} parole, {duration}s):
 {trans['text']}
 
-ESTRAI (in formato JSON):
+ESTRAI (in formato JSON, TUTTO in italiano):
 1. participants: lista SOLO nomi delle persone PRESENTI alla riunione (che parlano o partecipano attivamente). NON includere clienti, progetti o persone solo menzionate. Esempi: ["Marco", "Sara", "Claudia"]
 
 2. mentioned_people: nomi di persone, clienti, fornitori o aziende MENZIONATE ma NON presenti alla riunione. Esempi: ["Cliente Rossi", "Fornitore XYZ", "Azienda ABC"]
 
-3. topics: argomenti principali discussi (massimo 8 argomenti). Esempi: ["Avanzamento progetti fotovoltaici", "Budget marketing", "Problemi autorizzazioni"]
+3. topics: argomenti principali discussi in ITALIANO (massimo 8 argomenti). Esempi: ["Avanzamento progetti fotovoltaici", "Budget marketing", "Problemi autorizzazioni"]
 
-4. decisions: decisioni CONCRETE prese durante la riunione. Ogni decisione deve avere:
-   - decision: cosa è stato deciso
+4. decisions: decisioni CONCRETE prese durante la riunione, scritte in ITALIANO. Ogni decisione deve avere:
+   - decision: cosa è stato deciso (in italiano)
    - by: chi ha deciso (nome persona o "Team")
    - date: quando implementare (o "Immediato" se non specificato)
    Esempi: [
@@ -279,8 +281,8 @@ ESTRAI (in formato JSON):
      {{"decision": "Completare installazione entro metà novembre", "by": "Team", "date": "15 novembre"}}
    ]
 
-5. action_items: azioni concrete da fare. Ogni azione deve avere:
-   - task: cosa fare (descrizione chiara)
+5. action_items: azioni concrete da fare, scritte in ITALIANO. Ogni azione deve avere:
+   - task: cosa fare (descrizione chiara in italiano)
    - owner: chi deve farlo (nome specifico, NON "Sconosciuto")
    - deadline: quando (data o periodo, es. "Lunedì", "15 novembre", "Fine mese")
    Esempi: [
@@ -290,21 +292,23 @@ ESTRAI (in formato JSON):
 
 6. key_numbers: numeri e cifre importanti menzionate. Ogni numero deve avere:
    - amount: il numero/cifra (solo cifre, es. "1000", "6")
-   - type: tipo (es. "budget", "duration", "quantity", "percentage")
-   - context: cosa rappresenta (breve descrizione)
+   - type: tipo in ITALIANO (es. "budget", "durata", "quantità", "percentuale")
+   - context: cosa rappresenta in ITALIANO (breve descrizione)
    Esempi: [
      {{"amount": "1000", "type": "budget", "context": "Budget mensile Google Ads in euro"}},
-     {{"amount": "6", "type": "duration", "context": "Durata campagna marketing in mesi"}}
+     {{"amount": "6", "type": "durata", "context": "Durata campagna marketing in mesi"}}
    ]
 
-7. detailed_summary: riassunto dettagliato narrativo (200-400 parole) che spiega cosa è stato discusso, quali problemi sono emersi, quali soluzioni proposte, e prossimi passi
+7. detailed_summary: riassunto dettagliato narrativo in ITALIANO (200-400 parole) che spiega cosa è stato discusso, quali problemi sono emersi, quali soluzioni proposte, e prossimi passi
 
-8. tldr: riassunto ultra-conciso (1-2 frasi, massimo 40 parole) che cattura l'essenza della riunione
+8. tldr: riassunto ultra-conciso in ITALIANO (1-2 frasi, massimo 40 parole) che cattura l'essenza della riunione
 
-IMPORTANTE:
+REGOLE FONDAMENTALI:
 - Rispondi SOLO con JSON valido, nessun altro testo
+- TUTTO il contenuto deve essere in lingua ITALIANA (decisions, action_items, topics, summaries, ecc.)
 - Se non trovi informazioni per una sezione, usa array vuoto [] o stringa vuota ""
 - Sii preciso e specifico, evita generalizzazioni
+- NON usare inglese, SOLO italiano
 """
 
     try:
