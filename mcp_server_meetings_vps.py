@@ -15,16 +15,20 @@ from typing import Optional
 import sys
 import logging
 
-# Setup logging
+# Setup logging (only to file, not stderr to avoid MCP protocol interference)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('/var/log/mcp_server_meetings.log'),
-        logging.StreamHandler()
+        logging.FileHandler('/var/log/mcp_server_meetings.log')
+        # StreamHandler removed: stderr interferes with MCP JSON-RPC protocol
     ]
 )
 logger = logging.getLogger('mcp_server_meetings')
+
+# Disable httpx logging to avoid stderr interference
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('httpcore').setLevel(logging.WARNING)
 
 # Database config - LOCALHOST (running on same VPS)
 POSTGRES_HOST = "localhost"
