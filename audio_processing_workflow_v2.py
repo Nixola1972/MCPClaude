@@ -160,12 +160,23 @@ def transcribe_audio_batch(audio_files, file_metadata):
     from faster_whisper import WhisperModel
     import torch
 
-    # Force CPU due to cuDNN issues (still 2x faster than standard Whisper!)
-    device = "cpu"
-    compute_type = "int8"
-
-    print(f"  Device: {device} (compute_type: {compute_type})")
-    print("  ℹ️  Using CPU mode (cuDNN not available, but still faster!)")
+    # Auto-detect GPU or fallback to CPU
+    try:
+        if torch.cuda.is_available():
+            device = "cuda"
+            compute_type = "float16"
+            print(f"  Device: {device} (compute_type: {compute_type})")
+            print(f"  🚀 GPU detected: {torch.cuda.get_device_name(0)}")
+            print(f"  💾 VRAM available: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        else:
+            device = "cpu"
+            compute_type = "int8"
+            print(f"  Device: {device} (compute_type: {compute_type})")
+            print("  ⚠️  GPU not available, using CPU")
+    except Exception as e:
+        print(f"  ⚠️  GPU detection failed ({e}), falling back to CPU")
+        device = "cpu"
+        compute_type = "int8"
 
     # Load faster-whisper model
     model = WhisperModel(WHISPER_MODEL, device=device, compute_type=compute_type)
