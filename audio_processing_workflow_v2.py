@@ -154,19 +154,22 @@ def download_new_audio():
 
 # ===== STEP 2: TRANSCRIPTION =====
 def transcribe_audio_batch(audio_files, file_metadata):
-    """Transcribe audio files with Whisper using VAD and quality checks."""
-    print(f"\n🎤 Step 2: Transcribing {len(audio_files)} files with Whisper...")
+    """Transcribe audio files with faster-whisper (optimized) with VAD and quality checks."""
+    print(f"\n🎤 Step 2: Transcribing {len(audio_files)} files with faster-whisper...")
 
-    import whisper
+    from faster_whisper import WhisperModel
     import torch
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"  Device: {device}")
+    compute_type = "float16" if device == "cuda" else "int8"
+
+    print(f"  Device: {device} (compute_type: {compute_type})")
 
     if device == "cpu":
-        print("⚠️  WARNING: GPU not available, using CPU (very slow!)")
+        print("⚠️  WARNING: GPU not available, using CPU (slower but still faster than standard Whisper!)")
 
-    model = whisper.load_model(WHISPER_MODEL, device=device)
+    # Load faster-whisper model
+    model = WhisperModel(WHISPER_MODEL, device=device, compute_type=compute_type)
 
     transcriptions = []
 
@@ -174,42 +177,63 @@ def transcribe_audio_batch(audio_files, file_metadata):
         print(f"\n  [{i}/{len(audio_files)}] Transcribing: {audio_file.name}")
 
         try:
-            result = model.transcribe(
+            # Faster-whisper with VAD enabled
+            segments, info = model.transcribe(
                 str(audio_file),
                 language="it",
                 task="transcribe",
-                word_timestamps=True,  # Enable for better quality metrics
-                initial_prompt="Riunione aziendale professionale."
+                word_timestamps=True,
+                initial_prompt="Riunione aziendale professionale.",
+                vad_filter=True,  # VAD now works!
+                vad_parameters=dict(
+                    threshold=0.5,
+                    min_speech_duration_ms=250,
+                    min_silence_duration_ms=2000
+                )
             )
 
+            # Convert generator to list and build text
+            segments_list = list(segments)
+            full_text = " ".join([seg.text for seg in segments_list])
+
             # Calculate duration and quality metrics
-            duration_seconds = sum(seg['end'] for seg in result['segments']) if result['segments'] else 0
-            word_count = len(result['text'].split())
+            duration_seconds = segments_list[-1].end if segments_list else 0
+            word_count = len(full_text.split())
 
             # Calculate words per minute
             words_per_minute = (word_count / (duration_seconds / 60)) if duration_seconds > 0 else 0
 
-            # Calculate average confidence (if available)
+            # Calculate average confidence
             avg_confidence = 0.0
-            if result['segments']:
+            if segments_list:
                 confidences = []
-                for seg in result['segments']:
-                    if 'words' in seg and seg['words']:
-                        for word_info in seg['words']:
-                            if 'probability' in word_info:
-                                confidences.append(word_info['probability'])
+                for seg in segments_list:
+                    if hasattr(seg, 'words') and seg.words:
+                        for word in seg.words:
+                            if hasattr(word, 'probability'):
+                                confidences.append(word.probability)
                 if confidences:
                     avg_confidence = sum(confidences) / len(confidences)
 
             # Get file hash from metadata
             file_hash = file_metadata.get(str(audio_file), {}).get('hash', None)
 
+            # Convert segments to dict format for storage
+            segments_dict = [
+                {
+                    'start': seg.start,
+                    'end': seg.end,
+                    'text': seg.text
+                }
+                for seg in segments_list
+            ]
+
             transcription = {
                 'filename': audio_file.name,
                 'file_hash': file_hash,
-                'text': result['text'].strip(),
-                'segments': result['segments'],
-                'language': result['language'],
+                'text': full_text.strip(),
+                'segments': segments_dict,
+                'language': info.language,
                 'duration_seconds': int(duration_seconds),
                 'word_count': word_count,
                 'words_per_minute': round(words_per_minute, 1),
@@ -232,6 +256,8 @@ def transcribe_audio_batch(audio_files, file_metadata):
 
         except Exception as e:
             print(f"    ❌ Error: {e}")
+            import traceback
+            traceback.print_exc()
             continue
 
     print(f"\n✅ Transcriptions completed: {len(transcriptions)}/{len(audio_files)}")
@@ -734,11 +760,12 @@ def display_processing_results(transcriptions, summaries):
 # ===== MAIN WORKFLOW =====
 def main():
     print("=" * 60)
-    print("🚀 AUDIO PROCESSING WORKFLOW v2.1 - MCP-OPTIMIZED")
+    print("🚀 AUDIO PROCESSING WORKFLOW v2.1 - FASTER-WHISPER")
     print("=" * 60)
     print(f"Started: {datetime.now()}")
     print("\nNEW in v2.1:")
     print("  ✅ Hash-based duplicate detection")
+    print("  ✅ Faster-Whisper (3-5x faster + VAD)")
     print("  ✅ Quality metrics (words/min, confidence)")
     print("  ✅ Parallel summary processing")
     print("  ✅ Improved AI prompts (forced Italian)")
