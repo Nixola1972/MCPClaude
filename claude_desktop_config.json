@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "meetings": {
+      "command": "python3",
+      "args": [
+        "/home/sai/MCPClaude/mcp_server_meetings.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/home/sai/whisper_env/lib/python3.11/site-packages"
+      }
+    }
+  }
+}
