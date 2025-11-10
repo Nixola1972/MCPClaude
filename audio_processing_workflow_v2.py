@@ -179,13 +179,7 @@ def transcribe_audio_batch(audio_files, file_metadata):
                 language="it",
                 task="transcribe",
                 word_timestamps=True,  # Enable for better quality metrics
-                initial_prompt="Riunione aziendale professionale.",
-                vad_filter=True,  # NEW: Filter silences
-                vad_parameters={
-                    "threshold": 0.5,
-                    "min_speech_duration_ms": 250,
-                    "min_silence_duration_ms": 2000
-                }
+                initial_prompt="Riunione aziendale professionale."
             )
 
             # Calculate duration and quality metrics
@@ -745,10 +739,9 @@ def main():
     print(f"Started: {datetime.now()}")
     print("\nNEW in v2.1:")
     print("  ✅ Hash-based duplicate detection")
-    print("  ✅ Whisper VAD for better transcription")
     print("  ✅ Quality metrics (words/min, confidence)")
     print("  ✅ Parallel summary processing")
-    print("  ✅ Improved AI prompts")
+    print("  ✅ Improved AI prompts (forced Italian)")
     print("  ✅ Beautiful formatted output\n")
 
     try:
